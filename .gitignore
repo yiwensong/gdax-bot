@@ -61,3 +61,4 @@ typings/
 api-key/secret
 api-key/passphrase
 api-key/key
+.*.sw*

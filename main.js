@@ -63,8 +63,43 @@ function getOrderSize(productBalance, orderPrice, baseBalance) {
   // if we have a lot of product.
   var valueToPurchase = baseBalance - productValue;
   var ordSize = valueToPurchase/orderPrice;
+  if (Math.abs(ordSize) < productInfo.minOrdSize) return 0; // check for min order size
   return ordSize;
 };
+
+function getOrderLayers(productBalance, baseBalance, bestBid, bestAsk, layers) {
+  /** Returns a list of orders based on my product balance, currency balance, 
+   * best bid I can give, best ask I can give, and the number of layers that
+   * I am willing to put out.
+   */
+  var orderSize;
+  var pbal = productBalance;
+  var bbal = baseBalance;
+  var bid = bestBid;
+  var bids = new Array(layers);
+  for (var l=0; l<layers; l++) {
+    // For every layer, find the order size and then subtract that order
+    // from the next level (assume filled). 
+    orderSize = getOrderSize(pbal, bid, bbal);
+    bids[l] = [bid, orderSize];
+    pbal += orderSize;
+    bbal -= orderSize * bid;
+    bid = bid + productInfo.tickSize;
+  }
+
+  pbal = productBalance;
+  bbal = baseBalance;
+  var ask = myBestAsk;
+  var asks = new Array(layers);
+  for (var l=0; l<layers; l++) {
+    orderSize = getOrderSize(asksProductBalance, ask, bidsBaseBalance);
+    asks[l] = [ask, orderSize];
+    pbal += orderSize;
+    bbal -= orderSize * ask;
+    ask = ask + productInfo.tickSize;
+  }
+  return bids.concat(asks);
+}
 
 function getOrders(productBalance, baseBalance, book, layers) {
   /** Returns a list of orders given a product balance, base currency
@@ -90,15 +125,47 @@ function getOrders(productBalance, baseBalance, book, layers) {
     myBestAsk = Math.ceil(breakEvenPrice/productInfo.tickSize) * tickSize;
     myBestBid = Math.floor(breakEvenPrice/productInfo.tickSize) * tickSize;
   }
-  var bidsProductBalance = productBalance;
-  var asksProductBalance = productBalance;
-  var bidsBaseBalance = baseBalance;
-  var asksBaseBalance = baseBalance;
-  var bid = myBestBid, ask = myBestAsk;
-  for (var layer=0; layer<layers; layer++) {
-    var thisOrderSize = getOrderSize(bidsProductBalance, bid, bidsBaseBalance);
+  var orders = getOrderLayers(productBalance, baseBalance,
+      myBestBid, myBestAsk, layers);
+  return orders;
+};
+
+
+var allOrders = new Object();
+
+function orderSubmitCallback(err, resp, data) {
+  if (err) throw err;
+  allOrders[data.id] = data;
+};
+
+
+function submitOrders(orders) {
+  /** Calls GDAX API to submit the orders prescribed.
+   *
+   * Orders should be an array of arrays, where the first
+   * element in the inner array is the price and the second
+   * is the size. Negative sized orders are sell orders and
+   * positive sized orders are buy orders.
+   */
+  for (var i in orders) {
+    var params = {
+        'price': orders[0],
+        'size': Math.abs(orders[1]),
+        'product_id': productInfo.id,
+        'post_only': true;
+    };
+    if (orders[1] < 0) {
+      // Sell order
+      authedClient.sell(params, orderSubmitCallback);
+    } else if (orders[1] > 0) {
+      // Buy order
+      authedClient.buy(params, orderSubmitCallback);
+    } else {
+      // Do nothing
+    }
   }
 };
+
 
 websocket.on('message', function(wsData) {
   authedClient.getProductOrderBook({'level':2}, 'ETH-BTC', function (err, resp, orders) {
@@ -106,7 +173,7 @@ websocket.on('message', function(wsData) {
     // depending on our account info, we should put out bids and asks.
     // Never cross.
     authedClient.getAccounts(function (err, resp, accts){
-      acccountsCallback(err, resp, accts);
+      accountsCallback(err, resp, accts);
       var bestBid = orders.bids[0][0];
       var bestAsk = orders.asks[0][0];
       // Convert ETH into BTC
@@ -136,7 +203,14 @@ function accountsCallback(err, response, data) {
   }
 }
 authedClient.getAccounts(accountsCallback);
-authedClient.getProductOrderBook({'level': 2}, 'ETH-BTC', function(err, resp, body) { console.log(body); });
+
+var dummyParams = {
+  'price': 1,
+  'size': .01,
+  'product_id': 'ETH-BTC',
+}
+authedClient.sell(dummyParams, orderSubmitCallback);
+// authedClient.getProductOrderBook({'level': 2}, 'ETH-BTC', function(err, resp, body) { console.log(body); });
 
 // var orderbookSync = new Gdax.OrderbookSync('ETH-BTC', apiURI, websocketURI, authedClient);
 // console.log(orderbookSync.book.state());
