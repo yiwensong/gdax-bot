@@ -17,8 +17,8 @@ var websocketURI = 'wss://ws-feed.gdax.com';
 var authedClient = new Gdax.AuthenticatedClient(
     key, b64secret, passphrase, apiURI);
 
-var websocket = new Gdax.WebsocketClient(['ETH-BTC'], websocketURI,
-    {key: key, secret: b64secret, passphrase: passphrase});
+// var websocket = new Gdax.WebsocketClient(['ETH-BTC'], websocketURI,
+//     {key: key, secret: b64secret, passphrase: passphrase});
 
 var balance = {
   USD: 0.0,
@@ -99,7 +99,7 @@ function getOrderLayers(productBalance, baseBalance, bestBid, bestAsk, layers) {
     ask = ask + productInfo.tickSize;
   }
   return bids.concat(asks);
-}
+};
 
 function getOrders(productBalance, baseBalance, book, layers) {
   /** Returns a list of orders given a product balance, base currency
@@ -136,6 +136,10 @@ var allOrders = new Object();
 function orderSubmitCallback(err, resp, data) {
   if (err) throw err;
   allOrders[data.id] = data;
+  authedClient.cancelOrder(data.id, function (err, resp, cancel) {
+    if (err) throw err;
+    console.log(cancel);
+  });
 };
 
 
@@ -152,7 +156,7 @@ function submitOrders(orders) {
         'price': orders[0],
         'size': Math.abs(orders[1]),
         'product_id': productInfo.id,
-        'post_only': true;
+        'post_only': true,
     };
     if (orders[1] < 0) {
       // Sell order
@@ -167,21 +171,21 @@ function submitOrders(orders) {
 };
 
 
-websocket.on('message', function(wsData) {
-  authedClient.getProductOrderBook({'level':2}, 'ETH-BTC', function (err, resp, orders) {
-    // orders is the order book with keys 'bids' and 'asks'
-    // depending on our account info, we should put out bids and asks.
-    // Never cross.
-    authedClient.getAccounts(function (err, resp, accts){
-      accountsCallback(err, resp, accts);
-      var bestBid = orders.bids[0][0];
-      var bestAsk = orders.asks[0][0];
-      // Convert ETH into BTC
-      var bidETH = balance.ETH * bestBid;
-      var askETH = balance.ETH * bestAsk;
-    });
-  });
-});
+// websocket.on('message', function(wsData) {
+//   authedClient.getProductOrderBook({'level':2}, 'ETH-BTC', function (err, resp, orders) {
+//     // orders is the order book with keys 'bids' and 'asks'
+//     // depending on our account info, we should put out bids and asks.
+//     // Never cross.
+//     authedClient.getAccounts(function (err, resp, accts){
+//       accountsCallback(err, resp, accts);
+//       var bestBid = orders.bids[0][0];
+//       var bestAsk = orders.asks[0][0];
+//       // Convert ETH into BTC
+//       var bidETH = balance.ETH * bestBid;
+//       var askETH = balance.ETH * bestAsk;
+//     });
+//   });
+// });
 
 function getProductValue(product) {
   /** Returns the USD value of the product
@@ -189,7 +193,7 @@ function getProductValue(product) {
    */
   if (product == 'USD') return balance.USD;
   return values[product] * balance[product];
-}
+};
 
 function accountsCallback(err, response, data) {
   if (err) throw err;
@@ -201,14 +205,14 @@ function accountsCallback(err, response, data) {
     var account = data[i];
     balance[account.currency] += account.balance;
   }
-}
+};
 authedClient.getAccounts(accountsCallback);
 
 var dummyParams = {
   'price': 1,
   'size': .01,
   'product_id': 'ETH-BTC',
-}
+};
 authedClient.sell(dummyParams, orderSubmitCallback);
 // authedClient.getProductOrderBook({'level': 2}, 'ETH-BTC', function(err, resp, body) { console.log(body); });
 
